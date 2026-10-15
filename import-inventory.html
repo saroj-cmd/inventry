@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Import inventory from PDF</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@500;600;700&display=swap">
+<style>
+/* Layout: one ledger column — title, upload zone, status line, toolbar, scrollable table panel, sticky action bar. */
+:root {
+  --bg: #f2f6f4;
+  --surface: #ffffff;
+  --surface-2: #eaf1ed;
+  --ink: #13201a;
+  --muted: #5a6b63;
+  --line: #d8e3dd;
+  --line-strong: #bccbc3;
+  --accent: #0f7a5c;
+  --accent-hover: #0b6249;
+  --accent-ink: #ffffff;
+  --accent-soft: #dff1e9;
+  --warn: #b86e00;
+  --warn-soft: #fcf0d8;
+  --danger: #c2372c;
+  --danger-soft: #fbe8e5;
+  --shadow: 0 1px 2px rgba(19, 40, 30, .06), 0 6px 20px rgba(19, 40, 30, .06);
+  --font-display: "Sora", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1311; --surface: #141c19; --surface-2: #1a2420; --ink: #e3ebe7; --muted: #93a49c;
+    --line: #26332e; --line-strong: #364640; --accent: #3fc596; --accent-hover: #5ed4aa; --accent-ink: #062419;
+    --accent-soft: #143629; --warn: #f0b44c; --warn-soft: #382a10; --danger: #ff7c70; --danger-soft: #3a1b18;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1311; --surface: #141c19; --surface-2: #1a2420; --ink: #e3ebe7; --muted: #93a49c;
+  --line: #26332e; --line-strong: #364640; --accent: #3fc596; --accent-hover: #5ed4aa; --accent-ink: #062419;
+  --accent-soft: #143629; --warn: #f0b44c; --warn-soft: #382a10; --danger: #ff7c70; --danger-soft: #3a1b18;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main.wrap { padding-block: 28px 32px; display: grid; gap: 16px; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Header */
+.page-head { display: grid; gap: 4px; padding-bottom: 4px; }
+h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.4rem, 1.1rem + 1.4vw, 1.9rem);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 0;
+  text-wrap: balance;
+}
+.page-head p { margin: 0; color: var(--muted); max-width: 62ch; }
+
+/* Upload zone */
+.drop {
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 22px 20px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  transition: border-color .15s, background-color .15s;
+}
+.drop.is-over { border-color: var(--accent); background: var(--accent-soft); }
+.drop[aria-busy="true"] { opacity: .75; }
+.drop-icon {
+  flex: none;
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid; place-items: center;
+}
+.drop-text { flex: 1 1 240px; min-width: 0; display: grid; gap: 2px; }
+.drop-text strong { font-family: var(--font-display); font-weight: 600; font-size: 1.02rem; }
+.drop-text span { color: var(--muted); font-size: .9rem; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-weight: 600;
+  font-size: .93rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color .15s, border-color .15s, color .15s;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:disabled:hover { border-color: var(--line-strong); color: inherit; }
+.btn-primary:disabled:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-lg { min-height: 46px; padding: 0 22px; font-size: 1rem; }
+
+/* Status line */
+.status {
+  font-family: var(--font-mono);
+  font-size: .82rem;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-left: 3px solid var(--line-strong);
+  background: var(--surface-2);
+  border-radius: 0 8px 8px 0;
+  overflow-wrap: anywhere;
+}
+.status[data-kind="ok"] { border-left-color: var(--accent); color: var(--ink); }
+.status[data-kind="busy"] { border-left-color: var(--accent); }
+.status[data-kind="error"] { border-left-color: var(--danger); background: var(--danger-soft); color: var(--ink); }
+
+/* Toolbar */
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 320px; min-width: 0; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: .82rem;
+  color: var(--muted);
+}
+.chip b { font-family: var(--font-mono); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.chip-file b { font-family: var(--font-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 26ch; }
+.chip-warn { border-color: transparent; background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+.chip-warn b { color: var(--warn); }
+.chip-warn::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.tools { display: flex; gap: 8px; flex: 1 1 300px; justify-content: flex-end; min-width: 0; }
+.search {
+  flex: 1 1 180px; min-width: 0; max-width: 300px;
+  position: relative;
+}
+.search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.search input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px 0 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.legend { margin: 0; font-size: .86rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.legend::before { content: ""; width: 4px; height: 18px; border-radius: 2px; background: var(--warn); flex: none; }
+
+/* Table */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  min-width: 0;
+  overflow: hidden;
+}
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; min-width: 980px; border-collapse: collapse; table-layout: fixed; }
+thead th {
+  text-align: left;
+  font-size: .72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  background: var(--surface-2);
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+thead th.num { text-align: right; padding-right: 14px; }
+tbody td { padding: 3px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+td.idx {
+  font-family: var(--font-mono);
+  font-size: .78rem;
+  color: var(--muted);
+  text-align: right;
+  padding-right: 10px;
+  font-variant-numeric: tabular-nums;
+}
+tr.needs-review td.idx { box-shadow: inset 4px 0 0 var(--warn); color: var(--warn); font-weight: 600; }
+.cell {
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  font-size: .9rem;
+  text-overflow: ellipsis;
+}
+.cell:hover { border-color: var(--line-strong); }
+.cell:focus { outline: none; border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cell::placeholder { color: var(--muted); opacity: .6; }
+.cell.num { text-align: right; font-family: var(--font-mono); font-size: .86rem; font-variant-numeric: tabular-nums; }
+.cell.name { font-weight: 500; }
+td.missing .cell { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+td.missing .cell::placeholder { color: var(--danger); opacity: .85; }
+.del {
+  width: 32px; height: 32px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.del:hover { color: var(--danger); background: var(--danger-soft); }
+.empty td { text-align: center; color: var(--muted); padding: 40px 16px; background: transparent !important; }
+
+/* Sticky action bar */
+.actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.actionbar .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-block: 12px; }
+.action-note { margin: 0; font-size: .92rem; color: var(--muted); min-width: 0; }
+.action-note b { color: var(--ink); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.action-note .warn { color: var(--warn); font-weight: 600; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  transform: translate(-50%, 12px);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  background: var(--ink);
+  color: var(--bg);
+  padding: 11px 16px;
+  border-radius: 10px;
+  font-size: .9rem;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s, transform .2s;
+  z-index: 10;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (max-width: 560px) {
+  main.wrap { padding-block: 20px 24px; }
+  .drop { padding: 18px 16px; gap: 14px; }
+  .drop .btn { flex: 1 1 100%; }
+  .tools { flex-basis: 100%; }
+  .search { max-width: none; }
+  .actionbar .btn { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body>
+
+<main class="wrap">
+  <header class="page-head">
+    <h1>Import inventory from PDF</h1>
+    <p>Upload a stock list or price list PDF, check the products we found, then add them to your shop in one go.</p>
+  </header>
+
+  <section class="drop" id="drop" aria-label="Upload inventory PDF">
+    <div class="drop-icon" aria-hidden="true">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 17v-6"/><path d="m9 13 3-3 3 3"/></svg>
+    </div>
+    <div class="drop-text">
+      <strong>Drop your inventory PDF here</strong>
+      <span>Text-based PDFs with a product table work best. Files stay on this device.</span>
+    </div>
+    <button class="btn btn-primary" id="choose" type="button">Choose PDF</button>
+    <input type="file" id="file" accept=".pdf,application/pdf" hidden>
+  </section>
+
+  <div class="status" id="status" role="status" aria-live="polite" data-kind="info">Showing sample products. Upload your PDF to replace them.</div>
+
+  <div class="toolbar">
+    <div class="chips" aria-label="Import summary">
+      <span class="chip chip-file" title="Source"><span>Source</span> <b id="chipFile">Sample data</b></span>
+      <span class="chip"><b id="chipCount">0</b> <span id="chipCountLabel">products</span></span>
+      <span class="chip"><b id="chipUnits">0</b> units</span>
+      <span class="chip chip-warn" id="chipReview" hidden><b id="chipReviewN">0</b> need review</span>
+    </div>
+    <div class="tools">
+      <label class="search">
+        <span class="sr-only">Search products</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" id="search" placeholder="Search products" autocomplete="off">
+      </label>
+      <button class="btn" id="addRow" type="button">+ Add row</button>
+    </div>
+  </div>
+
+  <p class="legend">Rows marked on the left are missing a name, price or quantity.</p>
+
+  <div class="panel">
+    <div class="table-scroll">
+      <table aria-label="Products to import">
+        <colgroup>
+          <col style="width:46px"><col style="width:22%"><col style="width:10%"><col style="width:11%"><col style="width:7%">
+          <col style="width:7%"><col style="width:9%"><col style="width:9%"><col><col style="width:44px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col" class="num">#</th>
+            <th scope="col">Product name</th>
+            <th scope="col">SKU</th>
+            <th scope="col">Category</th>
+            <th scope="col">Unit</th>
+            <th scope="col" class="num">Qty</th>
+            <th scope="col" class="num">Price ₹</th>
+            <th scope="col" class="num">MRP ₹</th>
+            <th scope="col">Description</th>
+            <th scope="col"><span class="sr-only">Delete</span></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<div class="actionbar">
+  <div class="wrap">
+    <p class="action-note" id="actionNote"></p>
+    <button class="btn btn-primary btn-lg" id="submit" type="button">Add products</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+(() => {
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+
+  /* ---------- Config ---------- */
+  const FIELDS = ["name", "sku", "category", "unit", "quantity", "price", "mrp", "description"];
+  const NUMERIC = new Set(["quantity", "price", "mrp"]);
+  const LABELS = { name: "Product name", sku: "SKU", category: "Category", unit: "Unit", quantity: "Qty", price: "Price", mrp: "MRP", description: "Description" };
+  const SYNONYMS = {
+    name: ["item", "items", "product", "product name", "item name", "name", "particulars", "article"],
+    sku: ["sku", "code", "item code", "product code", "barcode", "hsn", "part no", "model"],
+    category: ["category", "group", "type", "brand", "department"],
+    unit: ["unit", "uom", "pack", "size"],
+    quantity: ["qty", "quantity", "stock", "in stock", "available", "closing stock", "balance", "nos"],
+    price: ["price", "rate", "selling price", "sp", "sale price", "unit price", "cost", "amount"],
+    mrp: ["mrp", "m.r.p.", "list price", "retail price"],
+    description: ["desc", "description", "details", "remarks", "notes"]
+  };
+  const HEADER_LOOKUP = new Map();
+  for (const [key, list] of Object.entries(SYNONYMS)) {
+    for (const s of list) {
+      HEADER_LOOKUP.set(s, key);
+      HEADER_LOOKUP.set(s.replace(/\./g, ""), key);
+    }
+  }
+  const SKIP_ROW = /^\s*(grand\s*total|sub\s*-?\s*total|total)\b/i;
+
+  /* ---------- State ---------- */
+  let rows = [];
+  let source = "Sample data";
+  let nextId = 1;
+
+  const makeRow = (data = {}) => {
+    const r = { id: nextId++ };
+    for (const f of FIELDS) r[f] = data[f] == null ? "" : String(data[f]);
+    return r;
+  };
+
+  const SAMPLE = [
+    { name: "L'Oréal Professionnel Absolut Repair Shampoo", sku: "LOR-AR-300", category: "Hair care", unit: "300 ml", quantity: 24, price: 1099, mrp: 1250, description: "For dry, damaged hair" },
+    { name: "Lakmé 9to5 Matte Lipstick, Crimson Silk", sku: "LKM-95-CS", category: "Makeup", unit: "3.6 g", quantity: 40, price: 329, mrp: 399, description: "" },
+    { name: "Cetaphil Gentle Foaming Face Wash", sku: "CTP-GF-236", category: "Skin care", unit: "236 ml", quantity: 18, price: 849, mrp: 949, description: "Sensitive skin" },
+    { name: "Schwarzkopf Taft Ultra Hair Spray", sku: "SWK-TU-250", category: "Styling", unit: "250 ml", quantity: "", price: 499, mrp: 575, description: "Strong hold" },
+    { name: "Nitrile Gloves, Black, Medium", sku: "GLV-NB-M100", category: "Salon supplies", unit: "Box of 100", quantity: 12, price: 645, mrp: 799, description: "Powder free" },
+    { name: "Round Cotton Pads", sku: "CTN-RP-120", category: "Salon supplies", unit: "120 pcs", quantity: 60, price: 95, mrp: 120, description: "" }
+  ];
+
+  /* ---------- Helpers ---------- */
+  const $ = (id) => document.getElementById(id);
+  const tbody = $("tbody"), searchEl = $("search"), statusEl = $("status"), submitBtn = $("submit");
+  const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+
+  function parseNum(v) {
+    if (v == null) return null;
+    const t = String(v).replace(/₹|\brs\b\.?|\binr\b|,|\s/gi, "");
+    const m = t.match(/-?\d+(?:\.\d+)?/);
+    return m ? Number(m[0]) : null;
+  }
+  const textOrNull = (v) => { const t = String(v ?? "").trim(); return t ? t : null; };
+  const isMissing = (r, f) => f === "name" ? !r.name.trim() : parseNum(r[f]) === null;
+  const rowNeedsReview = (r) => isMissing(r, "name") || isMissing(r, "price") || isMissing(r, "quantity");
+
+  function setStatus(msg, kind = "info") {
+    statusEl.textContent = msg;
+    statusEl.dataset.kind = kind;
+  }
+
+  /* ---------- PDF → lines of cells ---------- */
+  async function extractLines(pdf, onPage) {
+    const lines = [];
+    let textChars = 0;
+    for (let p = 1; p <= pdf.numPages; p++) {
+      onPage(p);
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      const items = tc.items
+        .filter((it) => it.str && it.str.trim())
+        .map((it) => ({ str: it.str, x: it.transform[4], y: it.transform[5], w: it.width || 0 }));
+      textChars += items.reduce((n, it) => n + it.str.trim().length, 0);
+
+      // Sort top-to-bottom, then left-to-right; group items within 3px of y into one line.
+      items.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+      const groups = [];
+      for (const it of items) {
+        const g = groups[groups.length - 1];
+        if (g && Math.abs(g.y - it.y) <= 3) g.items.push(it);
+        else groups.push({ y: it.y, items: [it] });
+      }
+
+      // Within a line, merge items closer than 8px into one cell.
+      for (const g of groups) {
+        g.items.sort((a, b) => a.x - b.x);
+        const cells = [];
+        for (const it of g.items) {
+          const c = cells[cells.length - 1];
+          const x1 = it.x + it.w;
+          const gap = c ? it.x - c.x1 : Infinity;
+          if (c && gap < 8) {
+            c.text += (gap > 1 ? " " : "") + it.str;
+            c.x1 = Math.max(c.x1, x1);
+          } else {
+            cells.push({ text: it.str, x0: it.x, x1 });
+          }
+        }
+        for (const c of cells) c.text = c.text.replace(/\s+/g, " ").trim();
+        const kept = cells.filter((c) => c.text);
+        if (kept.length) lines.push({ page: p, cells: kept });
+      }
+      page.cleanup();
+    }
+    return { lines, textChars };
+  }
+
+  function headerKey(text) {
+    const n = text.toLowerCase()
+      .replace(/\(.*?\)/g, " ")
+      .replace(/₹|\brs\b\.?|\binr\b/g, " ")
+      .replace(/[:*#/]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return HEADER_LOOKUP.get(n) || HEADER_LOOKUP.get(n.replace(/\./g, "").trim()) || null;
+  }
+
+  function isHeaderLine(line) {
+    const keys = line.cells.map((c) => headerKey(c.text));
+    return { keys, ok: keys.filter(Boolean).length >= 2 && keys.includes("name") };
+  }
+
+  function recordToRow(rec) {
+    const data = {};
+    for (const f of FIELDS) {
+      const raw = (rec[f] || "").trim();
+      if (!NUMERIC.has(f)) { data[f] = raw; continue; }
+      const n = parseNum(raw);
+      data[f] = n === null ? "" : n;
+      // "12 pcs" in a qty column: keep the unit if no unit column filled it.
+      if (f === "quantity" && n !== null && !rec.unit) {
+        const u = raw.replace(/[\d.,\s]+/g, " ").trim();
+        if (/^[a-z][a-z .]{0,11}$/i.test(u)) data.unit = u;
+      }
+    }
+    return data;
+  }
+
+  /* Table mode: find header row, map every later cell to the nearest header column. */
+  function parseTable(lines) {
+    let cols = null;
+    const out = [];
+    for (const line of lines) {
+      const h = isHeaderLine(line);
+      if (h.ok) {
+        if (!cols) cols = line.cells.map((c, i) => ({ key: h.keys[i], x0: c.x0, x1: c.x1, cx: (c.x0 + c.x1) / 2 }));
+        continue; // also skips headers repeated on later pages
+      }
+      if (!cols) continue;
+      const joined = line.cells.map((c) => c.text).join(" ");
+      if (SKIP_ROW.test(joined)) continue;
+
+      const rec = {};
+      for (const c of line.cells) {
+        const cx = (c.x0 + c.x1) / 2;
+        let best = null, bestD = Infinity;
+        for (const col of cols) {
+          // Nearest by centre, also allowing left-aligned text and right-aligned numbers to line up by edge.
+          const d = Math.min(Math.abs(col.cx - cx), Math.abs(col.x0 - c.x0), Math.abs(col.x1 - c.x1));
+          if (d < bestD) { bestD = d; best = col; }
+        }
+        if (!best || !best.key) continue; // columns like S.No are ignored
+        rec[best.key] = rec[best.key] ? rec[best.key] + " " + c.text : c.text;
+      }
+      const filled = FIELDS.filter((f) => rec[f] && rec[f].trim()).length;
+      const hasNumber = ["quantity", "price", "mrp"].some((f) => parseNum(rec[f]) !== null);
+      // Lone text lines (page titles, footers, notes) are not products.
+      if (filled >= 2 || (hasNumber && filled >= 1)) out.push(recordToRow(rec));
+    }
+    return cols ? out : null;
+  }
+
+  /* Fallback: lines shaped like "name … numbers". */
+  function numToken(t) {
+    const s = t.replace(/^(₹|rs\.?|inr)/i, "").replace(/,/g, "");
+    if (!/^-?\d+(\.\d+)?$/.test(s) || s.replace(/\D/g, "").length > 9) return null;
+    return Number(s);
+  }
+  function parseLoose(lines) {
+    const out = [];
+    for (const line of lines) {
+      let text = line.cells.map((c) => c.text).join(" ").replace(/\s+/g, " ").trim();
+      if (!text || SKIP_ROW.test(text)) continue;
+      text = text.replace(/^\d{1,4}[.)]?\s+(?=\D)/, ""); // leading serial number
+      const toks = text.split(" ");
+      const nums = [];
+      while (toks.length) {
+        const t = toks[toks.length - 1];
+        if (/^(₹|rs\.?|inr)$/i.test(t)) { toks.pop(); continue; }
+        const n = numToken(t);
+        if (n === null) break;
+        nums.unshift(n);
+        toks.pop();
+      }
+      let name = toks.join(" ").replace(/[\s₹:\-–|]+$/, "").trim();
+      if (!nums.length || !/[a-z]/i.test(name)) continue;
+      const data = { name };
+      if (nums.length === 1) data.price = nums[0];
+      else {
+        const last = nums.slice(-3);
+        if (nums.length > 3) data.name = (name + " " + nums.slice(0, -3).join(" ")).trim();
+        data.quantity = last[0];
+        data.price = last[1];
+        if (last.length === 3) data.mrp = last[2];
+      }
+      out.push(data);
+    }
+    return out;
+  }
+
+  /* ---------- File handling ---------- */
+  let busy = false;
+  async function handleFile(file) {
+    if (!file || busy) return;
+    const looksPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
+    if (!looksPdf) {
+      setStatus(`"${file.name}" isn't a PDF. Choose a file that ends in .pdf.`, "error");
+      return;
+    }
+    if (!window.pdfjsLib) {
+      setStatus("The PDF reader didn't load. Check your internet connection and reload the page.", "error");
+      return;
+    }
+    busy = true;
+    $("drop").setAttribute("aria-busy", "true");
+    $("choose").disabled = true;
+    let pdf = null;
+    try {
+      setStatus(`Opening ${file.name}…`, "busy");
+      const buf = await file.arrayBuffer();
+      const head = new TextDecoder("latin1").decode(new Uint8Array(buf.slice(0, 1024)));
+      if (!head.includes("%PDF")) {
+        setStatus(`"${file.name}" isn't a real PDF file. Export or save it as PDF and try again.`, "error");
+        return;
+      }
+      try {
+        pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      } catch (err) {
+        if (err && err.name === "PasswordException") {
+          setStatus("This PDF is password-protected. Remove the password, save a new copy and upload that.", "error");
+        } else {
+          setStatus("This PDF looks damaged and couldn't be opened. Download or export it again, then retry.", "error");
+        }
+        return;
+      }
+
+      const pages = pdf.numPages;
+      const { lines, textChars } = await extractLines(pdf, (p) => setStatus(`Reading page ${p} of ${pages}…`, "busy"));
+      if (textChars < 5) {
+        setStatus("This PDF has no readable text. It looks like a scan or photo, and OCR isn't added yet. Export the list from your billing software as a PDF instead.", "error");
+        return;
+      }
+
+      let parsed = parseTable(lines);
+      let guessed = false;
+      if (!parsed || !parsed.length) { parsed = parseLoose(lines); guessed = true; }
+      if (!parsed.length) {
+        setStatus("No product rows found. Make sure the PDF has a table with a product name column and prices.", "error");
+        return;
+      }
+
+      rows = parsed.map(makeRow);
+      source = file.name;
+      searchEl.value = "";
+      render();
+      const pageWord = pages === 1 ? "page" : "pages";
+      const n = rows.length;
+      setStatus(
+        `Found ${n} product${n === 1 ? "" : "s"} across ${pages} ${pageWord}.` +
+        (guessed ? " No column headings were found, so qty, price and MRP were guessed from the numbers on each line. Check them below." : ""),
+        "ok"
+      );
+    } catch (err) {
+      console.error(err);
+      setStatus("Something went wrong while reading this PDF. Try exporting it again, or add the products by hand.", "error");
+    } finally {
+      if (pdf) pdf.destroy();
+      busy = false;
+      $("drop").removeAttribute("aria-busy");
+      $("choose").disabled = false;
+      $("file").value = "";
+    }
+  }
+
+  /* ---------- Rendering ---------- */
+  function cellClass(f) {
+    return "cell" + (NUMERIC.has(f) ? " num" : "") + (f === "name" ? " name" : "");
+  }
+
+  function buildRow(r, index) {
+    const tr = document.createElement("tr");
+    tr.dataset.id = r.id;
+    const idx = document.createElement("td");
+    idx.className = "idx";
+    idx.textContent = index + 1;
+    tr.appendChild(idx);
+    for (const f of FIELDS) {
+      const td = document.createElement("td");
+      td.dataset.field = f;
+      const input = document.createElement("input");
+      input.className = cellClass(f);
+      input.id = `cell-${r.id}-${f}`;
+      input.dataset.field = f;
+      input.value = r[f];
+      input.autocomplete = "off";
+      input.setAttribute("aria-label", `${LABELS[f]}, row ${index + 1}`);
+      if (NUMERIC.has(f)) input.inputMode = f === "quantity" ? "numeric" : "decimal";
+      td.appendChild(input);
+      tr.appendChild(td);
+    }
+    const tdDel = document.createElement("td");
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "del";
+    del.id = `del-${r.id}`;
+    del.textContent = "×";
+    del.setAttribute("aria-label", `Delete row ${index + 1}`);
+    tdDel.appendChild(del);
+    tr.appendChild(tdDel);
+    updateRowFlags(tr, r);
+    return tr;
+  }
+
+  function updateRowFlags(tr, r) {
+    tr.classList.toggle("needs-review", rowNeedsReview(r));
+    for (const f of ["name", "quantity", "price"]) {
+      const td = tr.querySelector(`td[data-field="${f}"]`);
+      const miss = isMissing(r, f);
+      td.classList.toggle("missing", miss);
+      const input = td.firstChild;
+      input.placeholder = miss ? "Required" : "";
+      input.setAttribute("aria-invalid", miss ? "true" : "false");
+    }
+  }
+
+  function render() {
+    const q = searchEl.value.trim().toLowerCase();
+    const frag = document.createDocumentFragment();
+    let shown = 0;
+    rows.forEach((r, i) => {
+      if (q && !FIELDS.some((f) => r[f].toLowerCase().includes(q))) return;
+      frag.appendChild(buildRow(r, i));
+      shown++;
+    });
+    tbody.replaceChildren(frag);
+    if (!shown) {
+      const tr = document.createElement("tr");
+      tr.className = "empty";
+      const td = document.createElement("td");
+      td.colSpan = 10;
+      td.textContent = rows.length ? `No products match "${searchEl.value.trim()}".` : "No products yet. Upload a PDF or add a row.";
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+    updateSummary();
+  }
+
+  function updateSummary() {
+    const n = rows.length;
+    const review = rows.filter(rowNeedsReview).length;
+    const units = rows.reduce((s, r) => s + (parseNum(r.quantity) || 0), 0);
+    $("chipFile").textContent = source;
+    $("chipFile").title = source;
+    $("chipCount").textContent = fmt.format(n);
+    $("chipCountLabel").textContent = n === 1 ? "product" : "products";
+    $("chipUnits").textContent = fmt.format(units);
+    $("chipReviewN").textContent = review;
+    $("chipReview").hidden = review === 0;
+
+    const note = $("actionNote");
+    note.replaceChildren();
+    const b = document.createElement("b");
+    b.textContent = fmt.format(n);
+    note.append(b, ` product${n === 1 ? "" : "s"} ready`);
+    if (n) {
+      const w = document.createElement("span");
+      if (review) w.className = "warn";
+      w.textContent = `${review} with missing fields`;
+      note.append(", ", w);
+    }
+    submitBtn.disabled = n === 0;
+  }
+
+  /* ---------- Payload ---------- */
+  // Builds the bulk-add request body. Later: replace the console.log calls in the
+  // submit handler with fetch("/api/bulk-add-products", { method: "POST", body: JSON.stringify(buildPayload()) }).
+  function buildPayload() {
+    const products = rows.map((r, i) => ({
+      name: r.name.trim(),
+      sku: textOrNull(r.sku),
+      category: textOrNull(r.category),
+      unit: textOrNull(r.unit),
+      quantity: parseNum(r.quantity) ?? 0,
+      price: parseNum(r.price),
+      mrp: parseNum(r.mrp),
+      description: textOrNull(r.description),
+      isActive: true,
+      rowNo: i + 1
+    }));
+    return {
+      source,
+      generatedAt: new Date().toISOString(),
+      count: products.length,
+      products
+    };
+  }
+
+  let toastTimer;
+  function toast(msg) {
+    const el = $("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 4500);
+  }
+
+  /* ---------- Events ---------- */
+  tbody.addEventListener("input", (e) => {
+    const input = e.target.closest("input[data-field]");
+    if (!input) return;
+    const tr = input.closest("tr");
+    const r = rows.find((x) => x.id === Number(tr.dataset.id));
+    if (!r) return;
+    r[input.dataset.field] = input.value;
+    updateRowFlags(tr, r);
+    updateSummary();
+  });
+
+  tbody.addEventListener("click", (e) => {
+    const btn = e.target.closest(".del");
+    if (!btn) return;
+    const tr = btn.closest("tr");
+    const id = Number(tr.dataset.id);
+    const nextTr = tr.nextElementSibling || tr.previousElementSibling;
+    const nextId = nextTr && nextTr.dataset.id;
+    rows = rows.filter((x) => x.id !== id);
+    render();
+    const target = nextId && document.getElementById(`del-${nextId}`);
+    (target || $("addRow")).focus();
+  });
+
+  searchEl.addEventListener("input", render);
+
+  $("addRow").addEventListener("click", () => {
+    const r = makeRow();
+    rows.push(r);
+    if (searchEl.value) searchEl.value = "";
+    render();
+    const input = document.getElementById(`cell-${r.id}-name`);
+    if (input) {
+      input.focus();
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      input.scrollIntoView({ block: "center", inline: "start", behavior: reduce ? "auto" : "smooth" });
+    }
+  });
+
+  submitBtn.addEventListener("click", () => {
+    if (!rows.length) return;
+    const payload = buildPayload();
+    console.log(payload);
+    console.log(JSON.stringify(payload, null, 2));
+    const review = rows.filter(rowNeedsReview).length;
+    const n = payload.count;
+    toast(`JSON for ${n} product${n === 1 ? "" : "s"} printed to the console` + (review ? ` (${review} still have missing fields)` : ""));
+  });
+
+  const drop = $("drop"), fileInput = $("file");
+  $("choose").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => handleFile(fileInput.files[0]));
+
+  let dragDepth = 0;
+  drop.addEventListener("dragenter", (e) => { e.preventDefault(); dragDepth++; drop.classList.add("is-over"); });
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+  drop.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; drop.classList.remove("is-over"); } });
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    drop.classList.remove("is-over");
+    const files = e.dataTransfer.files;
+    if (files && files.length) handleFile(files[0]);
+  });
+  // Stop the browser from opening a PDF dropped outside the zone.
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => { if (!drop.contains(e.target)) e.preventDefault(); });
+
+  /* ---------- Init ---------- */
+  rows = SAMPLE.map(makeRow);
+  render();
+})();
+</script>
+</body>
+</html>
